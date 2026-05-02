@@ -86,6 +86,10 @@ struct App {
     cancel_handle: CancelHandle,
     stream_rx: Option<Receiver<TranslateEvent>>,
 
+    // True when the user has manually picked a target language this session;
+    // suppresses auto-detection for that one translation.
+    target_lang_manually_set: bool,
+
     settings_api_key: String,
     settings_base_url: String,
     settings_model: String,
@@ -111,6 +115,7 @@ impl App {
             status_msg: "就绪".to_string(),
             cancel_handle: Arc::new(Mutex::new(None)),
             stream_rx: None,
+            target_lang_manually_set: false,
             settings_show_api_key: false,
             settings_test_status: String::new(),
             test_rx: None,
@@ -127,6 +132,17 @@ impl App {
             self.status_msg = "请先在设置中配置 API Key".to_string();
             return;
         }
+
+        // Auto-detect source language: if the text is predominantly Chinese,
+        // override the target language to English; otherwise use Chinese.
+        if !self.target_lang_manually_set {
+            self.config.target_lang = if is_predominantly_chinese(&text) {
+                "英文".to_string()
+            } else {
+                "中文".to_string()
+            };
+        }
+        self.target_lang_manually_set = false;
 
         self.config.save();
         self.target_text.clear();
@@ -299,6 +315,7 @@ impl App {
                             self.view = View::Settings;
                         }
                         ui.add_space(8.0);
+                        let before = self.config.target_lang.clone();
                         egui::ComboBox::from_id_salt("lang_select")
                             .selected_text(&self.config.target_lang)
                             .show_ui(ui, |ui| {
@@ -310,6 +327,9 @@ impl App {
                                     );
                                 }
                             });
+                        if self.config.target_lang != before {
+                            self.target_lang_manually_set = true;
+                        }
                     });
                 });
             });
@@ -769,4 +789,33 @@ fn field_label(ui: &mut egui::Ui, text: &str) {
 fn non_empty_or(s: &str, fallback: &str) -> String {
     let t = s.trim();
     if t.is_empty() { fallback.to_string() } else { t.to_string() }
+}
+
+/// Returns true when more than 20% of the letters in `text` are CJK characters,
+/// which we treat as "predominantly Chinese" (also covers Japanese/Korean kanji
+/// but that's an acceptable heuristic for this use case).
+fn is_predominantly_chinese(text: &str) -> bool {
+    let mut total = 0usize;
+    let mut cjk = 0usize;
+    for ch in text.chars() {
+        if ch.is_alphabetic() || matches!(ch as u32,
+            0x4E00..=0x9FFF   // CJK Unified Ideographs
+            | 0x3400..=0x4DBF  // CJK Extension A
+            | 0x20000..=0x2A6DF // CJK Extension B
+            | 0xF900..=0xFAFF  // CJK Compatibility Ideographs
+            | 0x3000..=0x303F  // CJK Symbols and Punctuation
+            | 0xFF00..=0xFFEF  // Halfwidth/Fullwidth Forms
+        ) {
+            total += 1;
+            if matches!(ch as u32,
+                0x4E00..=0x9FFF
+                | 0x3400..=0x4DBF
+                | 0x20000..=0x2A6DF
+                | 0xF900..=0xFAFF
+            ) {
+                cjk += 1;
+            }
+        }
+    }
+    total > 0 && cjk * 5 > total // >20% CJK
 }

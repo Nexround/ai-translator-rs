@@ -35,7 +35,7 @@ fn default_system_prompt() -> String {
     DEFAULT_SYSTEM_PROMPT.to_string()
 }
 fn default_target_lang() -> String {
-    "英文".to_string()
+    "中文".to_string()
 }
 
 impl Default for Config {
