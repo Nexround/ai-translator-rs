@@ -412,14 +412,16 @@ impl App {
                             .max_rect(src_rect)
                             .layout(egui::Layout::top_down(egui::Align::LEFT)),
                     );
-                    let clear_clicked = draw_source_panel(&mut src_ui, ph, &mut self.source_text);
+                    let src_resp = draw_source_panel(&mut src_ui, ph, &mut self.source_text);
                     ui.advance_cursor_after_rect(src_rect);
 
-                    if clear_clicked {
+                    if src_resp.clear_clicked {
                         self.cancel_translation();
                         self.source_text.clear();
                         self.target_text.clear();
                         self.status_msg = "已清空".to_string();
+                    } else if src_resp.pasted && !is_translating {
+                        self.start_translation(ctx);
                     }
 
                     // Gap
@@ -447,9 +449,15 @@ impl App {
     }
 }
 
-/// Draws the source text panel. Returns true if the clear button was clicked.
-fn draw_source_panel(ui: &mut egui::Ui, height: f32, source_text: &mut String) -> bool {
-    let mut clear = false;
+struct SourcePanelResponse {
+    clear_clicked: bool,
+    pasted: bool,
+}
+
+/// Draws the source text panel.
+fn draw_source_panel(ui: &mut egui::Ui, height: f32, source_text: &mut String) -> SourcePanelResponse {
+    let mut clear_clicked = false;
+    let mut pasted = false;
     egui::Frame::NONE
         .fill(BG_PANEL)
         .stroke(egui::Stroke::new(1.0, BORDER))
@@ -469,7 +477,7 @@ fn draw_source_panel(ui: &mut egui::Ui, height: f32, source_text: &mut String) -
                 ui.label(egui::RichText::new("原文").size(12.0).color(TEXT_MUTED));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.small_button("清空").clicked() {
-                        clear = true;
+                        clear_clicked = true;
                     }
                 });
             });
@@ -481,16 +489,22 @@ fn draw_source_panel(ui: &mut egui::Ui, height: f32, source_text: &mut String) -
                 .id_salt("source_scroll")
                 .max_height(content_h)
                 .show(ui, |ui| {
-                    ui.add(
+                    let response = ui.add(
                         egui::TextEdit::multiline(source_text)
                             .hint_text("在此输入要翻译的文本...")
                             .desired_rows(30)
                             .font(egui::TextStyle::Body)
                             .desired_width(f32::INFINITY),
                     );
+                    // Detect paste while the text editor has focus
+                    if response.has_focus() {
+                        pasted = ui.input(|i| {
+                            i.events.iter().any(|e| matches!(e, egui::Event::Paste(_)))
+                        });
+                    }
                 });
         });
-    clear
+    SourcePanelResponse { clear_clicked, pasted }
 }
 
 /// Draws the target text panel. Returns true if the copy button was clicked.
